@@ -1,10 +1,10 @@
-from typing  import Awaitable
-from uuid    import uuid4
+from typing             import Awaitable
+from uuid               import uuid4
 
 from fastapi.websockets import WebSocketState, WebSocket
 from loguru             import logger
 
-from .event import Event
+from .event             import Event
 
 
 class UserConnection:

@@ -2,9 +2,10 @@ import inspect
 
 from collections import OrderedDict
 from typing      import Any
+from types       import UnionType, NoneType
 
 from pydantic    import BaseModel
-from fastapi     import Header
+from fastapi     import Header, Form as FormField
 from loguru      import logger
 
 def is_saving(isSaving: int = Header(...)) -> bool:
@@ -29,14 +30,22 @@ class Form(BaseModel):
     class _:
         ...
 
-    formName: str | None = None
+    formName: str | None = FormField(None)
 
-    def __init__(self, cls, **data):
+    def __init__(self, **data):
         self._.name       = data.get('formName')
         self._.data       = data
         self._.valid_data = {}
         self._.errors     = OrderedDict()
+        self._.error      = None # global form error
     
+    def _is_field_required(self, annotation: UnionType | Any) -> bool:
+        if isinstance(annotation, UnionType):
+            annotation = annotation.__args__
+            return len(annotation) < 2 or annotation[-1] != NoneType
+        return True
+        
+
     def _get_validate_method(self, name):
         method_name = f'validate_{name}'
         if hasattr(self, method_name):
@@ -48,14 +57,22 @@ class Form(BaseModel):
 
     @property
     def form_error(self) -> str | None:
+        if self._.error:
+            return self._.error
         if self.error_count:
             s = 's' if self.error_count > 1 else ''
             return f'This form contains {self.error_count} error{s}'
         return None
 
+    @form_error.setter
+    def form_error(self, value: str):
+        if not isinstance(value, str):
+            raise Exception('Form error must be an instance of str')
+        self._.error = value
+
     @property
     def is_valid(self) -> bool:
-        return not bool(self._.errors)
+        return not bool(self._.errors) and not bool(self._.error)
 
     @property
     def valid_data(self) -> dict:
@@ -77,7 +94,7 @@ class Form(BaseModel):
             value = self._.data.get(field_name)
             if not self.is_valid and (value is None or value == ''):
                 break
-            if field_info.is_required() and (value is None or value == ''):
+            if self._is_field_required(field_info.annotation) and (value is None or value == ''):
                 self._.errors[field_name] = 'Field is required'
                 break
             if method := self._get_validate_method(field_name):
