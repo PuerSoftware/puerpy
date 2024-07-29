@@ -1,3 +1,4 @@
+import html
 import inspect
 
 from collections import OrderedDict
@@ -13,14 +14,19 @@ def is_saving(isSaving: int = Header(...)) -> bool:
         isSaving or 0
     ))
 
+def JsonFormField(*args, **kwargs) -> FormField:
+    kwargs['media_type'] = 'application/json'
+    return FormField(*args, **kwargs)
+
 class FormValidationError(Exception):
     ...
 
 class FormResponse(BaseModel):
-    error  : str | None
-    errors : dict[str, str]
-    name   : str | None
-    data   : dict[str, Any]
+    error        : str | None
+    errors       : dict[str, str]
+    name         : str | None
+    data         : dict[str, Any]
+    redirect_uri : str | None = None
 
 
 class Form(BaseModel):
@@ -30,15 +36,21 @@ class Form(BaseModel):
     class _:
         ...
 
-    formName: str | None = FormField(None)
+    form_name: str | None = JsonFormField(None)
 
     def __init__(self, **data):
-        self._.name       = data.get('formName')
-        self._.data       = data
+        self._.name       = data.get('form_name')
+        self._.data       = self._escape(data) # escape html for xss prevention
         self._.valid_data = {}
         self._.errors     = OrderedDict()
         self._.error      = None # global form error
     
+    def _escape(data: dict[str, Any]) -> dict[str, Any]:
+        for key, value in data.items():
+            if isinstance(value, str):
+                data[key] = html.escape(value)
+        return data
+
     def _is_field_required(self, annotation: UnionType | Any) -> bool:
         if isinstance(annotation, UnionType):
             annotation = annotation.__args__
@@ -89,7 +101,7 @@ class Form(BaseModel):
 
     async def validate(self):
         for field_name, field_info in self.model_fields.items():
-            if field_name == 'formName':
+            if field_name == 'form_name':
                 continue
             value = self._.data.get(field_name)
             if not self.is_valid and (value is None or value == ''):
