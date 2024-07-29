@@ -45,7 +45,7 @@ class Form(BaseModel):
         self._.errors     = OrderedDict()
         self._.error      = None # global form error
     
-    def _escape(data: dict[str, Any]) -> dict[str, Any]:
+    def _escape(self, data: dict[str, Any]) -> dict[str, Any]:
         for key, value in data.items():
             if isinstance(value, str):
                 data[key] = html.escape(value)
