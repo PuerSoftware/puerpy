@@ -1,4 +1,4 @@
-from typing     import Any
+from typing     import Any, Iterable
 
 from sqlalchemy import (
     Table,
@@ -6,7 +6,10 @@ from sqlalchemy import (
     update,
     select,
     exists,
-    delete
+    delete,
+    and_,
+
+    Select
 )
 from sqlalchemy.orm import aliased
 
@@ -30,6 +33,35 @@ class Model:
         }
     }
     """
+    @staticmethod
+    def _normalize_joined(sub_models: Iterable[str], data: dict) -> dict:
+        """
+        prepare data from puerpy.model.Model.get_by_join()
+        for BaseModel.model_validate method
+        """
+        normalized = {}
+
+        for key, value in data.items():
+            splitted_key = key.split('__')
+            sub_model    = splitted_key[0]
+
+            if sub_model in sub_models:
+                if not normalized.get(sub_model):
+                    normalized[sub_model] = {}
+                normalized[sub_model][splitted_key[1]] = value
+            else:
+                normalized[key] = value
+        
+        return normalized
+    
+    @staticmethod
+    def _normalize_joined_list(sub_models: Iterable[str], data: Iterable[dict]) -> list[dict]:
+        """
+        prepare data from puerpy.model.Model.get_all_join()
+        for RootModel[list[BaseModel]].model_validate method
+        """
+        return [Model._normalize_joined(sub_models, d) for d in data]
+
     @classmethod
     def _aliases(cls) -> dict:
         if not cls.__aliases_cache:
@@ -38,6 +70,35 @@ class Model:
                 for name in cls.__related__
             }
         return cls.__aliases_cache
+
+    @classmethod
+    def _q_filter(cls, q: Select, filters: Iterable = None) -> Select:
+        if filters:
+            q = q.where(and_(*filters))
+        return q
+    
+    @classmethod
+    def _q_join(cls, tables: Iterable[str], filters: Iterable = None) -> Select:
+        aliases = cls._aliases()
+        labels = [
+            getattr(aliases[t].c, c.key).label(f'{t}__{c.key}')
+            for t in tables    
+            for c in aliases[t].c
+        ]
+
+        q = cls._q_filter(
+            select(cls, *labels)
+                .select_from(cls),
+            filters
+        )
+
+        for t in tables:
+            on = cls.__related__[t]['on']
+            q = q.join(
+                aliases[t],
+                getattr(cls, on[0]) == getattr(aliases[t].c, on[1])
+            )
+        return q
 
     @classmethod
     async def create(cls, data: dict) -> dict:
@@ -63,30 +124,34 @@ class Model:
                 .where(getattr(cls, field) == value)
                 .limit(1)
         )
-        
-    @classmethod
-    async def get_all(cls) -> list[dict]:
-        return await Db.fetch_all(
-            select(cls)
-        )
     
     @classmethod
-    async def get_all_join(cls, *tables) -> list[dict]:
-        aliases = cls._aliases()
-        labels = [
-            getattr(aliases[t].c, c.key).label(f'{t}__{c.key}')
-            for t in tables    
-            for c in aliases[t].c
-        ]
-        q = select(cls, *labels).select_from(cls)
+    async def get_one(cls, filters: Iterable = None) -> list[dict]:
+        return await Db.fetch_one(
+            cls._q_filter(select(cls), filters)
+                .limit(1)
+        )
 
-        for t in tables:
-            on = cls.__related__[t]['on']
-            q = q.join(
-                aliases[t],
-                getattr(cls, on[0]) == getattr(aliases[t].c, on[1])
-            )
-        return await Db.fetch_all(q)
+    @classmethod
+    async def get_one_with_join(cls, tables: Iterable[str], filters: Iterable = None) -> list[dict]:
+        return cls._normalize_joined(tables, await Db.fetch_one(
+            cls._q_join(tables, filters)
+                .limit(1)
+        ))
+
+    @classmethod
+    async def get_all(cls) -> list[dict]:
+        return await Db.fetch_all(select(cls))
+    
+    @classmethod
+    async def get_many(cls, filters: Iterable = None) -> list[dict]:
+        return await Db.fetch_all(cls._q_filter(select(cls), filters))
+
+    @classmethod
+    async def get_many_with_join(cls, tables: Iterable[str], filters: Iterable = None) -> list[dict]:
+        return cls._normalize_joined_list(tables, await Db.fetch_all(
+            cls._q_join(tables, filters)
+        ))
     
     @classmethod
     async def exists(cls, field: str, value: Any) -> bool:

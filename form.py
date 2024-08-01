@@ -40,7 +40,7 @@ class Form(BaseModel):
 
     def __init__(self, **data):
         self._.name       = data.get('form_name')
-        self._.data       = self._escape(data) # escape html for xss prevention
+        self._.data       = self._escape(self._vaidate_types(data)) # escape html for xss prevention
         self._.valid_data = {}
         self._.errors     = OrderedDict()
         self._.error      = None # global form error
@@ -49,6 +49,23 @@ class Form(BaseModel):
         for key, value in data.items():
             if isinstance(value, str):
                 data[key] = html.escape(value)
+        return data
+    
+    def _vaidate_types(self, data: dict[str, Any]) -> dict[str, Any]:
+        for k, v in data.items():
+            if info := self.model_fields.get(k):
+                if v is not None:
+                    _type = None
+                    if isinstance(info.annotation, UnionType):
+                        _type = info.annotation.__args__[0]
+                    else:
+                        _type = info.annotation
+                    try:
+                        data[k] = _type(v)
+                    except TypeError:
+                        raise FormValidationError(f'Mismatched type for field "{k}"')
+            else:
+                raise FormValidationError(f'Unknown field "{k}"')
         return data
 
     def _is_field_required(self, annotation: UnionType | Any) -> bool:
