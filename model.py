@@ -1,4 +1,4 @@
-from typing     import Any, Iterable
+from typing     import Any, Iterable, Callable
 
 from sqlalchemy import (
     Table,
@@ -9,7 +9,9 @@ from sqlalchemy import (
     delete,
     and_,
 
-    Select
+    Select,
+    Insert,
+    Update
 )
 from sqlalchemy.orm import aliased
 
@@ -17,7 +19,8 @@ from .db import Db
 
 
 class Model:
-    __aliases_cache: dict = None
+    __aliases_cache    : dict = None
+    __decorators_cache : dict[str, Callable] = None
 
     __pk_field__  = 'id'
     __related__   = {}
@@ -33,6 +36,9 @@ class Model:
         }
     }
     """
+
+    #################### POST PROCESSING ####################
+
     @staticmethod
     def _normalize_joined(sub_models: Iterable[str], data: dict) -> dict:
         """
@@ -61,6 +67,34 @@ class Model:
         for RootModel[list[BaseModel]].model_validate method
         """
         return [Model._normalize_joined(sub_models, d) for d in data]
+    
+    @classmethod
+    def _get_decorators(cls) -> dict[str, Callable]:
+        if cls.__decorators_cache is None:
+            cls.__decorators_cache = {}
+            for name in cls.__dict__:
+                if name.startswith('define_'):
+                    f = getattr(cls, name)
+                    if callable(f):
+                        cls.__decorators_cache[name[7:]] = f
+        return cls.__decorators_cache
+
+    @classmethod
+    def _decorate_record(cls, record: dict | None) -> dict | None:
+        if record is None:
+            return None
+        for name, f in cls._get_decorators().items():
+            record[name] = f(record)
+        return record
+
+    @classmethod
+    def _decorate_records(cls, records: list) -> list:
+        return [
+            cls._decorate_record(r)
+            for r in records
+        ]
+
+    #################### QUERY BUILDING ####################
 
     @classmethod
     def _aliases(cls) -> dict:
@@ -100,6 +134,34 @@ class Model:
             )
         return q
 
+    #################### DB OPERATIONS ####################
+
+    @classmethod
+    async def fetch_one(cls,
+        query        : Select | Insert | Update,
+        query_exists : bool = False
+    ) -> dict[str, Any] | bool:
+        """Can be extended in child classes"""
+        return cls._decorate_record(
+            await Db.fetch_one(query, query_exists)
+        )
+
+    @classmethod
+    async def fetch_all(cls,
+        query: Select | Insert | Update
+    ) -> list[dict[str, Any]]:
+        """Can be extended in child classes"""
+        return cls._decorate_records(
+            await Db.fetch_all(query)
+        )
+
+    @classmethod
+    async def execute(cls, query: Insert | Update) -> None:
+        """Can be extended in child classes"""
+        return await Db.execute(query)
+
+    #################### SQL OPERATIONS ####################
+
     @classmethod
     async def create(cls, data: dict) -> dict:
         return await Db.fetch_one(
@@ -110,7 +172,7 @@ class Model:
     
     @classmethod
     async def update(cls, pk: Any, to_update: dict) -> dict:
-        return await Db.fetch_one(
+        return await cls.fetch_one(
             update(cls)
                 .where(getattr(cls, cls.__pk_field__) == pk)
                 .values(**to_update)
@@ -119,43 +181,43 @@ class Model:
 
     @classmethod
     async def get_by(cls, field: str, value: Any) -> dict | None:
-        return await Db.fetch_one(
+        return await cls.fetch_one(
             select(cls)
                 .where(getattr(cls, field) == value)
                 .limit(1)
         )
     
     @classmethod
-    async def get_one(cls, filters: Iterable = None) -> list[dict]:
-        return await Db.fetch_one(
+    async def get_one(cls, filters: Iterable = None) -> dict | None:
+        return await cls.fetch_one(
             cls._q_filter(select(cls), filters)
                 .limit(1)
         )
 
     @classmethod
-    async def get_one_with_join(cls, tables: Iterable[str], filters: Iterable = None) -> list[dict]:
-        return cls._normalize_joined(tables, await Db.fetch_one(
+    async def get_one_with_join(cls, tables: Iterable[str], filters: Iterable = None) -> dict | None:
+        return cls._normalize_joined(tables, await cls.fetch_one(
             cls._q_join(tables, filters)
                 .limit(1)
         ))
 
     @classmethod
     async def get_all(cls) -> list[dict]:
-        return await Db.fetch_all(select(cls))
+        return await cls.fetch_all(select(cls))
     
     @classmethod
     async def get_many(cls, filters: Iterable = None) -> list[dict]:
-        return await Db.fetch_all(cls._q_filter(select(cls), filters))
+        return await cls.fetch_all(cls._q_filter(select(cls), filters))
 
     @classmethod
     async def get_many_with_join(cls, tables: Iterable[str], filters: Iterable = None) -> list[dict]:
-        return cls._normalize_joined_list(tables, await Db.fetch_all(
+        return cls._normalize_joined_list(tables, await cls.fetch_all(
             cls._q_join(tables, filters)
         ))
     
     @classmethod
     async def exists(cls, field: str, value: Any) -> bool:
-        return await Db.fetch_one(
+        return await cls.fetch_one(
             select(
                 exists()
                     .where(getattr(cls, field) == value)
@@ -165,7 +227,7 @@ class Model:
     
     @classmethod
     async def delete(cls, pk: Any):
-        await Db.execute(
+        await cls.execute(
             delete(cls)
                 .where(getattr(cls, cls.__pk_field__) == pk)
         )
