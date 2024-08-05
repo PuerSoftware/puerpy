@@ -81,6 +81,12 @@ class Form(BaseModel):
         method_name = f'validate_{name}'
         if hasattr(self, method_name):
             return getattr(self, method_name)
+    
+    def _has_field(self, field) -> bool:
+        return field in self.model_fields
+
+    def _is_field_required(self, field) -> bool:
+        return self.model_fields[field].required
 
     @property
     def error_count(self) -> int:
@@ -117,28 +123,32 @@ class Form(BaseModel):
             name   = self._name,
             data   = self._data
         )
-
     async def validate(self):
-        for field_name, field_info in self.model_fields.items():
-            if field_name == 'form_name':
+        for field, value in self._data.items():
+            if field == 'form_name':
                 continue
-            value = self._data.get(field_name)
+
             if not self.is_valid and (value is None or value == ''):
                 break
-            if field_info.required and (value is None or value == ''):
-                self._errors[field_name] = 'Field is required'
+            if not self._has_field(field):
+                self._error = f'Unknown field "{field}"'
                 break
-            if field_info.required or (not field_info.required and value is not None):
-                if method := self._get_validate_method(field_name):
-                    try:
-                        if inspect.iscoroutinefunction(method):
-                            self._valid_data[field_name] = await method(value)
-                        else:
-                            self._valid_data[field_name] = method(value)
-                    except FormValidationError as e:
-                        self._errors[field_name] = str(e)
-                    except Exception as e:
-                        logger.error(f'{self.__class__.__name__}.{field_name}: {e}')
-                        self._errors[field_name] = 'This field contains error'
-                else:
-                    self._valid_data[field_name] = value
+            if self._is_field_required(field) and (value is None or value == ''):
+                self._errors[field] = 'Field is required'
+                break
+
+            if method := self._get_validate_method(field):
+                try:
+                    if inspect.iscoroutinefunction(method):
+                        self._valid_data[field] = await method(value)
+                    else:
+                        self._valid_data[field] = method(value)
+                except FormValidationError as e:
+                    self._errors[field] = str(e)
+                    continue
+                except Exception as e:
+                    logger.error(f'{self.__class__.__name__}.{field}: {e}')
+                    self._errors[field] = 'This field contains error'
+                    continue
+                
+            self._valid_data[field] = value
