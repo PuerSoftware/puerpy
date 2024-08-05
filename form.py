@@ -1,25 +1,37 @@
 import html
 import inspect
 
-from collections import OrderedDict
-from typing      import Any
-from types       import UnionType, NoneType
+from collections    import OrderedDict
+from typing         import Any
+from types          import UnionType, NoneType
 
-from pydantic    import BaseModel
-from fastapi     import Header, Form as FormField
-from loguru      import logger
+from pydantic       import BaseModel
+from fastapi        import Header
+from fastapi.params import Form as FastApiFormFieldParam
+from loguru         import logger
 
 def is_saving(isSaving: int = Header(...)) -> bool:
     return bool(int(
         isSaving or 0
     ))
 
-def JsonFormField(*args, **kwargs) -> FormField:
+
+class FormFieldParam(FastApiFormFieldParam):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.required = kwargs.get('required', True)
+
+def FormField(*args, **kwargs) -> FormFieldParam:
+    return FormFieldParam(*args, **kwargs)
+
+def JsonFormField(*args, **kwargs) -> FormFieldParam:
     kwargs['media_type'] = 'application/json'
     return FormField(*args, **kwargs)
 
+
 class FormValidationError(Exception):
     ...
+
 
 class FormResponse(BaseModel):
     error        : str | None
@@ -33,17 +45,16 @@ class Form(BaseModel):
     """
     Form for dynamic field validation
     """
-    class _:
-        ...
 
-    form_name: str | None = JsonFormField(None)
+    form_name: str | None = JsonFormField(None, required=False)
 
     def __init__(self, **data):
-        self._.name       = data.get('form_name')
-        self._.data       = self._escape(self._vaidate_types(data)) # escape html for xss prevention
-        self._.valid_data = {}
-        self._.errors     = OrderedDict()
-        self._.error      = None # global form error
+        super().__init__(**data)
+        self._name       = data.get('form_name')
+        self._data       = self._escape(self._vaidate_types(data)) # escape html for xss prevention
+        self._valid_data = {}
+        self._errors     = OrderedDict()
+        self._error      = None # global form error
     
     def _escape(self, data: dict[str, Any]) -> dict[str, Any]:
         for key, value in data.items():
@@ -64,16 +75,7 @@ class Form(BaseModel):
                         data[k] = _type(v)
                     except TypeError:
                         raise FormValidationError(f'Mismatched type for field "{k}"')
-            else:
-                raise FormValidationError(f'Unknown field "{k}"')
         return data
-
-    def _is_field_required(self, annotation: UnionType | Any) -> bool:
-        if isinstance(annotation, UnionType):
-            annotation = annotation.__args__
-            return len(annotation) < 2 or annotation[-1] != NoneType
-        return True
-        
 
     def _get_validate_method(self, name):
         method_name = f'validate_{name}'
@@ -82,12 +84,12 @@ class Form(BaseModel):
 
     @property
     def error_count(self) -> int:
-        return len(self._.errors)
+        return len(self._errors)
 
     @property
     def form_error(self) -> str | None:
-        if self._.error:
-            return self._.error
+        if self._error:
+            return self._error
         if self.error_count:
             s = 's' if self.error_count > 1 else ''
             return f'This form contains {self.error_count} error{s}'
@@ -97,45 +99,46 @@ class Form(BaseModel):
     def form_error(self, value: str):
         if not isinstance(value, str):
             raise Exception('Form error must be an instance of str')
-        self._.error = value
+        self._error = value
 
     @property
     def is_valid(self) -> bool:
-        return not bool(self._.errors) and not bool(self._.error)
+        return not bool(self._errors) and not bool(self._error)
 
     @property
     def valid_data(self) -> dict:
-        return self._.valid_data
+        return self._valid_data
 
     @property
     def response(self) -> FormResponse:
         return FormResponse(
             error  = self.form_error,
-            errors = self._.errors,
-            name   = self._.name,
-            data   = self._.data
+            errors = self._errors,
+            name   = self._name,
+            data   = self._data
         )
 
     async def validate(self):
         for field_name, field_info in self.model_fields.items():
             if field_name == 'form_name':
                 continue
-            value = self._.data.get(field_name)
+            value = self._data.get(field_name)
             if not self.is_valid and (value is None or value == ''):
                 break
-            if self._is_field_required(field_info.annotation) and (value is None or value == ''):
-                self._.errors[field_name] = 'Field is required'
+            if field_info.required and (value is None or value == ''):
+                self._errors[field_name] = 'Field is required'
                 break
-            if method := self._get_validate_method(field_name):
-                try:
-                    if inspect.iscoroutinefunction(method):
-                        self._.valid_data[field_name] = await method(value)
-                    else:
-                        self._.valid_data[field_name] = method(value)
-                except FormValidationError as e:
-                    self._.errors[field_name] = str(e)
-                except Exception as e:
-                    logger.error(f'{self.__class__.__name__}.{field_name}: {e}')
-                    self._.errors[field_name] = 'This field contains error'
-            else:
-                self._.valid_data[field_name] = value
+            if field_info.required or (not field_info.required and value is not None):
+                if method := self._get_validate_method(field_name):
+                    try:
+                        if inspect.iscoroutinefunction(method):
+                            self._valid_data[field_name] = await method(value)
+                        else:
+                            self._valid_data[field_name] = method(value)
+                    except FormValidationError as e:
+                        self._errors[field_name] = str(e)
+                    except Exception as e:
+                        logger.error(f'{self.__class__.__name__}.{field_name}: {e}')
+                        self._errors[field_name] = 'This field contains error'
+                else:
+                    self._valid_data[field_name] = value
