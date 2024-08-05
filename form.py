@@ -123,6 +123,7 @@ class Form(BaseModel):
             name   = self._name,
             data   = self._data
         )
+    
     async def validate(self):
         for field, value in self._data.items():
             if field == 'form_name':
@@ -150,5 +151,5 @@ class Form(BaseModel):
                     logger.error(f'{self.__class__.__name__}.{field}: {e}')
                     self._errors[field] = 'This field contains error'
                     continue
-                
-            self._valid_data[field] = value
+            else:    
+                self._valid_data[field] = value
