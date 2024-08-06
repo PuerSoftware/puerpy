@@ -22,8 +22,9 @@ class Model:
     __aliases_cache    : dict = None
     __decorators_cache : dict[str, Callable] = None
 
-    __pk_field__  = 'id'
-    __related__   = {}
+    __pk_field__         = 'id'
+    __time_order_field__ = 'created'
+    __related__          = {}
     """
     :__related__
     uses for join requests automation
@@ -214,6 +215,28 @@ class Model:
         return cls._normalize_joined_list(tables, await cls.fetch_all(
             cls._q_join(tables, filters)
         ))
+    
+    @classmethod
+    async def get_many_last(cls, 
+        limit    : int  = None,
+        order_by : str  = None,
+        asc      : bool = True
+    ) -> list[dict]:
+
+        if not order_by:
+            order_by = cls.__time_order_field__ 
+
+        order = getattr(cls, order_by)
+        
+        if asc : order = order.asc()
+        else   : order = order.desc()
+
+        q = select(cls).order_by(order)
+        
+        if limit:
+            q = q.limit(limit)
+
+        return await cls.fetch_all(q)
     
     @classmethod
     async def exists(cls, field: str, value: Any) -> bool:

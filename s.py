@@ -5,3 +5,7 @@ class String:
             w.capitalize() for w in s.split('_')
         ])
         
+
+    @staticmethod
+    def to_kebab(s: str) -> str:
+        return s.lower().replace(' ', '-')
