@@ -2,6 +2,7 @@ import html
 import inspect
 
 from collections    import OrderedDict
+from datetime       import datetime
 from typing         import Any
 from types          import UnionType
 
@@ -62,6 +63,11 @@ class Form(BaseModel):
                 data[key] = html.escape(value)
         return data
     
+    def _cast(self, _type: Any, v: Any) -> Any:
+        if _type == datetime:
+            return datetime.fromisoformat(v)
+        return _type(v)
+
     def _vaidate_types(self, data: dict[str, Any]) -> dict[str, Any]:
         for k, v in data.items():
             if info := self.model_fields.get(k):
@@ -72,9 +78,11 @@ class Form(BaseModel):
                     else:
                         _type = info.annotation
                     try:
-                        data[k] = _type(v)
+                        print('CAST', k, _type, v)
+                        data[k] = self._cast(_type, v)
+
                     except TypeError:
-                        raise FormValidationError(f'Mismatched type for field "{k}"')
+                        raise FormValidationError(f'Mismatched type for field "{k}", got {type(v)}, expected {_type}')
         return data
 
     def _get_validate_method(self, name):
