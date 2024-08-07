@@ -7,7 +7,7 @@ from types          import UnionType
 
 from pydantic       import BaseModel
 from fastapi        import Header
-from fastapi.params import Form as FastApiFormFieldParam
+from fastapi.params import Form as FastApiFormFieldParam#
 from loguru         import logger
 
 def is_saving(isSaving: int = Header(...)) -> bool:
@@ -18,8 +18,8 @@ def is_saving(isSaving: int = Header(...)) -> bool:
 
 class FormFieldParam(FastApiFormFieldParam):
     def __init__(self, *args, **kwargs):
+        self._is_required = kwargs.pop('is_required', True)
         super().__init__(*args, **kwargs)
-        self.__is_required = kwargs.get('is_required', True)
 
 def FormField(*args, **kwargs) -> FormFieldParam:
     return FormFieldParam(*args, **kwargs)
@@ -86,7 +86,7 @@ class Form(BaseModel):
         return field in self.model_fields
 
     def _is_field_required(self, field) -> bool:
-        return self.model_fields[field].__is_required
+        return self.model_fields[field]._is_required
 
     @property
     def error_count(self) -> int:
