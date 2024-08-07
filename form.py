@@ -78,7 +78,6 @@ class Form(BaseModel):
                     else:
                         _type = info.annotation
                     try:
-                        print('CAST', k, _type, v)
                         data[k] = self._cast(_type, v)
 
                     except TypeError:
