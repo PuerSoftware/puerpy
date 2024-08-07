@@ -81,9 +81,9 @@ class Model:
         return cls.__decorators_cache
 
     @classmethod
-    def _decorate_record(cls, record: dict | None) -> dict | None:
-        if record is None:
-            return None
+    def _decorate_record(cls, record: dict | bool | None) -> dict | bool | None:
+        if not isinstance(record, dict) or record is None:
+            return record
         for name, f in cls._get_decorators().items():
             record[name] = f(record)
         return record

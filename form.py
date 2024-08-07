@@ -3,7 +3,7 @@ import inspect
 
 from collections    import OrderedDict
 from typing         import Any
-from types          import UnionType, NoneType
+from types          import UnionType
 
 from pydantic       import BaseModel
 from fastapi        import Header
@@ -19,7 +19,7 @@ def is_saving(isSaving: int = Header(...)) -> bool:
 class FormFieldParam(FastApiFormFieldParam):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.required = kwargs.get('required', True)
+        self.__is_required = kwargs.get('is_required', True)
 
 def FormField(*args, **kwargs) -> FormFieldParam:
     return FormFieldParam(*args, **kwargs)
@@ -46,7 +46,7 @@ class Form(BaseModel):
     Form for dynamic field validation
     """
 
-    form_name: str | None = JsonFormField(None, required=False)
+    form_name: str | None = JsonFormField(None, is_required=False)
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -86,7 +86,7 @@ class Form(BaseModel):
         return field in self.model_fields
 
     def _is_field_required(self, field) -> bool:
-        return self.model_fields[field].required
+        return self.model_fields[field].__is_required
 
     @property
     def error_count(self) -> int:
@@ -148,7 +148,7 @@ class Form(BaseModel):
                     self._errors[field] = str(e)
                     continue
                 except Exception as e:
-                    logger.error(f'{self.__class__.__name__}.{field}: {e}')
+                    logger.exception(f'{self.__class__.__name__}.{field}: {e}')
                     self._errors[field] = 'This field contains error'
                     continue
             else:    
