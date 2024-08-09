@@ -7,14 +7,8 @@ from typing         import Any
 from types          import UnionType
 
 from pydantic       import BaseModel
-from fastapi        import Header
 from fastapi.params import Form as FastApiFormFieldParam#
 from loguru         import logger
-
-def is_saving(isSaving: int = Header(...)) -> bool:
-    return bool(int(
-        isSaving or 0
-    ))
 
 
 class FormFieldParam(FastApiFormFieldParam):
@@ -37,7 +31,9 @@ class FormValidationError(Exception):
 class FormResponse(BaseModel):
     error        : str | None
     errors       : dict[str, str]
-    name         : str | None
+    form_name    : str | None
+    is_saving    : bool
+    is_saved     : bool
     data         : dict[str, Any]
     redirect_uri : str | None = None
 
@@ -47,11 +43,13 @@ class Form(BaseModel):
     Form for dynamic field validation
     """
 
-    form_name: str | None = JsonFormField(None, is_required=False)
+    form_name: str  | None = JsonFormField(None, is_required=False)
+    is_saving: bool | None = JsonFormField(None, is_required=True)
 
     def __init__(self, **data):
         super().__init__(**data)
-        self._name       = data.get('form_name')
+        self._name       = data.pop('form_name', None)
+        self._is_saving  = data.pop('is_saving')
         self._data       = self._escape(self._vaidate_types(data)) # escape html for xss prevention
         self._valid_data = {}
         self._errors     = OrderedDict()
@@ -65,8 +63,11 @@ class Form(BaseModel):
     
     def _cast(self, _type: Any, v: Any) -> Any:
         if _type == datetime:
-            return datetime.fromisoformat(v)
-        return _type(v)
+            v = datetime.fromisoformat(v)
+        if not isinstance(v, _type):
+            v = _type(v)
+        return v
+
 
     def _vaidate_types(self, data: dict[str, Any]) -> dict[str, Any]:
         for k, v in data.items():
@@ -119,22 +120,34 @@ class Form(BaseModel):
         return not bool(self._errors) and not bool(self._error)
 
     @property
+    def data(self) -> dict:
+        return self._data
+    
+    @data.setter
+    def data(self, data: dict):
+        self._data = self._escape(self._vaidate_types(data))
+
+    @property
     def valid_data(self) -> dict:
         return self._valid_data
 
     @property
+    def is_saved(self) -> bool:
+        return self._is_saving and self.is_valid
+
+    @property
     def response(self) -> FormResponse:
         return FormResponse(
-            error  = self.form_error,
-            errors = self._errors,
-            name   = self._name,
-            data   = self._data
+            error     = self.form_error,
+            errors    = self._errors,
+            form_name = self._name,
+            is_saving = self._is_saving,
+            is_saved  = self.is_saved,
+            data      = self._data
         )
     
     async def validate(self):
         for field, value in self._data.items():
-            if field == 'form_name':
-                continue
 
             if not self.is_valid and (value is None or value == ''):
                 break
