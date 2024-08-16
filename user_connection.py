@@ -42,7 +42,7 @@ class UserConnection:
 
 
 class UserConnectionPool:
-    _pools: dict[int, 'UserConnectionPool'] = {} # user_id: UserConnectionPool 
+    _pools: dict[int, 'UserConnectionPool'] = {} # user_id: UserConnectionPool
 
     @staticmethod
     def connect(
@@ -78,14 +78,14 @@ class UserConnectionPool:
         connection = UserConnection(self, self.user_id, websocket, on_event)
         self.connections[connection.id] = connection
         return connection
-    
+
     async def _disconnect(self, connection_id: str) -> bool:
         del self.connections[connection_id]
         if not self._is_online:
             del UserConnectionPool._pools[self.user_id]
             return True
         return False
-    
+
     @property
     def _is_online(self) -> bool:
         return bool(len(self.connections))

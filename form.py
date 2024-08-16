@@ -49,18 +49,18 @@ class Form(BaseModel):
     def __init__(self, **data):
         super().__init__(**data)
         self._name       = data.pop('form_name', None)
-        self._is_saving  = data.pop('is_saving')
+        self._is_saving  = data.pop('is_saving', False)
         self._data       = self._escape(self._vaidate_types(data)) # escape html for xss prevention
         self._valid_data = {}
         self._errors     = OrderedDict()
         self._error      = None # global form error
-    
+
     def _escape(self, data: dict[str, Any]) -> dict[str, Any]:
         for key, value in data.items():
             if isinstance(value, str):
                 data[key] = html.escape(value)
         return data
-    
+
     def _cast(self, _type: Any, v: Any) -> Any:
         if _type == datetime:
             v = datetime.fromisoformat(v)
@@ -89,7 +89,7 @@ class Form(BaseModel):
         method_name = f'validate_{name}'
         if hasattr(self, method_name):
             return getattr(self, method_name)
-    
+
     def _has_field(self, field) -> bool:
         return field in self.model_fields
 
@@ -122,7 +122,7 @@ class Form(BaseModel):
     @property
     def data(self) -> dict:
         return self._data
-    
+
     @data.setter
     def data(self, data: dict):
         self._data = self._escape(self._vaidate_types(data))
@@ -145,7 +145,7 @@ class Form(BaseModel):
             is_saved  = self.is_saved,
             data      = self._data
         )
-    
+
     async def validate(self):
         for field, value in self._data.items():
 
@@ -171,5 +171,5 @@ class Form(BaseModel):
                     logger.exception(f'{self.__class__.__name__}.{field}: {e}')
                     self._errors[field] = 'This field contains error'
                     continue
-            else:    
+            else:
                 self._valid_data[field] = value

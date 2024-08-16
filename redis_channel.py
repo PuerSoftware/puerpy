@@ -9,7 +9,7 @@ from .user_connection     import UserConnectionPool
 
 class RedisChannel:
     channels   : dict[int: 'RedisChannel'] = {} # 'user_id' : RedisChannel
-    connection : Redis 
+    connection : Redis
 
     @staticmethod
     async def setup_connection(**kwargs):
@@ -25,7 +25,7 @@ class RedisChannel:
         return channel
 
     ########################################################
-    
+
     def __init__(self, user_id: int):
         self.user_id    = user_id
         self.pubsub     = None
@@ -36,13 +36,13 @@ class RedisChannel:
         while True:
             message = await self.pubsub.get_message(ignore_subscribe_messages=True)
             if message:
-                event  = str(message['data'])
+                event  = message['data'].decode('utf-8')
                 if pool := UserConnectionPool.get_by_id(self.user_id):
                     await pool.send(event)
             await asyncio.sleep(0.01)
 
     ########################################################
-    
+
     async def read(self):
         if not self.is_reading:
             self.pubsub = RedisChannel.connection.pubsub()

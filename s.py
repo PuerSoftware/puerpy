@@ -4,7 +4,7 @@ class String:
         return ''.join([
             w.capitalize() for w in s.split('_')
         ])
-        
+
 
     @staticmethod
     def to_kebab(s: str) -> str:
