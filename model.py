@@ -40,35 +40,6 @@ class Model:
 
 	#################### POST PROCESSING ####################
 
-	@staticmethod
-	def _normalize_joined(sub_models: Iterable[str], data: dict) -> dict:
-		"""
-		prepare data from puerpy.model.Model.get_by_join()
-		for BaseModel.model_validate method
-		"""
-		normalized = {}
-
-		for key, value in data.items():
-			splitted_key = key.split('__')
-			sub_model    = splitted_key[0]
-
-			if sub_model in sub_models:
-				if not normalized.get(sub_model):
-					normalized[sub_model] = {}
-				normalized[sub_model][splitted_key[1]] = value
-			else:
-				normalized[key] = value
-
-		return normalized
-
-	@staticmethod
-	def _normalize_joined_list(sub_models: Iterable[str], data: Iterable[dict]) -> list[dict]:
-		"""
-		prepare data from puerpy.model.Model.get_all_join()
-		for RootModel[list[BaseModel]].model_validate method
-		"""
-		return [Model._normalize_joined(sub_models, d) for d in data]
-
 	@classmethod
 	def _get_decorators(cls) -> dict[str, Callable]:
 		if cls.__decorators_cache is None:
@@ -95,10 +66,39 @@ class Model:
 			for r in records
 		]
 
+	@staticmethod
+	def normalize_joined(sub_models: Iterable[str], data: dict) -> dict:
+		"""
+		prepare data from puerpy.model.Model.get_by_join()
+		for BaseModel.model_validate method
+		"""
+		normalized = {}
+
+		for key, value in data.items():
+			splitted_key = key.split('__')
+			sub_model    = splitted_key[0]
+
+			if sub_model in sub_models:
+				if not normalized.get(sub_model):
+					normalized[sub_model] = {}
+				normalized[sub_model][splitted_key[1]] = value
+			else:
+				normalized[key] = value
+
+		return normalized
+
+	@staticmethod
+	def normalize_joined_list(sub_models: Iterable[str], data: Iterable[dict]) -> list[dict]:
+		"""
+		prepare data from puerpy.model.Model.get_all_join()
+		for RootModel[list[BaseModel]].model_validate method
+		"""
+		return [Model.normalize_joined(sub_models, d) for d in data]
+
 	#################### QUERY BUILDING ####################
 
 	@classmethod
-	def _aliases(cls) -> dict:
+	def aliases(cls) -> dict:
 		if not cls.__aliases_cache:
 			cls.__aliases_cache = {
 				name: aliased(Table(cls.__related__[name]['table'], cls.metadata))
@@ -107,21 +107,21 @@ class Model:
 		return cls.__aliases_cache
 
 	@classmethod
-	def _q_filter(cls, q: Select, filters: Iterable = None) -> Select:
+	def q_filter(cls, q: Select, filters: Iterable = None) -> Select:
 		if filters:
 			q = q.where(and_(*filters))
 		return q
 
 	@classmethod
-	def _q_join(cls, tables: Iterable[str], filters: Iterable = None) -> Select:
-		aliases = cls._aliases()
+	def q_join(cls, tables: Iterable[str], filters: Iterable = None) -> Select:
+		aliases = cls.aliases()
 		labels = [
 			getattr(aliases[t].c, c.key).label(f'{t}__{c.key}')
 			for t in tables
 			for c in aliases[t].c
 		]
 
-		q = cls._q_filter(
+		q = cls.q_filter(
 			select(cls, *labels)
 				.select_from(cls),
 			filters
@@ -200,17 +200,17 @@ class Model:
 	@classmethod
 	async def get_one(cls, filters: Iterable = None) -> dict | None:
 		return await cls.fetch_one(
-			cls._q_filter(select(cls), filters)
+			cls.q_filter(select(cls), filters)
 				.limit(1)
 		)
 
 	@classmethod
 	async def get_one_with_join(cls, tables: Iterable[str], filters: Iterable = None) -> dict | None:
 		if res := await cls.fetch_one(
-			cls._q_join(tables, filters)
+			cls.q_join(tables, filters)
 				.limit(1)
 		):
-			return cls._normalize_joined(tables, res)
+			return cls.normalize_joined(tables, res)
 		return None
 
 	@classmethod
@@ -219,12 +219,12 @@ class Model:
 
 	@classmethod
 	async def get_many(cls, filters: Iterable = None) -> list[dict]:
-		return await cls.fetch_all(cls._q_filter(select(cls), filters))
+		return await cls.fetch_all(cls.q_filter(select(cls), filters))
 
 	@classmethod
 	async def get_many_with_join(cls, tables: Iterable[str], filters: Iterable = None) -> list[dict]:
-		return cls._normalize_joined_list(tables, await cls.fetch_all(
-			cls._q_join(tables, filters)
+		return cls.normalize_joined_list(tables, await cls.fetch_all(
+			cls.q_join(tables, filters)
 		))
 
 	@classmethod
