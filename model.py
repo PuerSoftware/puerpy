@@ -52,7 +52,7 @@ class Model:
 		return cls.__decorators_cache
 
 	@classmethod
-	def _decorate_record(cls, record: dict | bool | None) -> dict | None:
+	def _decorate_record(cls, record: dict | None) -> dict | None:
 		if not isinstance(record, dict) or record is None:
 			return record
 		for name, f in cls._get_decorators().items():
