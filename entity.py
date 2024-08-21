@@ -24,3 +24,8 @@ class Entity(BaseModel):
 
 	def __init__(self, /, **data):
 		super().__init__(**self._decorate_data(**data))
+
+	@classmethod
+	def keys(cls) -> list[str]:
+		return list(cls.model_fields.keys())
+	
