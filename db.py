@@ -5,6 +5,7 @@ from sqlalchemy import (
 	Insert,
 	Select,
 	Update,
+	func
 )
 from sqlalchemy.ext.asyncio        import create_async_engine
 from sqlalchemy.ext.asyncio.engine import AsyncEngine
@@ -34,9 +35,10 @@ class Db:
 	@staticmethod
 	async def fetch_count(query: Select) -> int:
 		async with Db.engine.begin() as conn:
-			cursor: CursorResult = await conn.execute(query)
-			res = cursor.scalar()
-			return int(res) if res else 0
+			count_query = query.with_only_columns(func.count()).order_by(None)
+			cursor: CursorResult = await conn.execute(count_query)
+			count = cursor.scalar()
+			return count if count is not None else 0
 
 	@staticmethod
 	async def execute(query: Insert | Update) -> None:
