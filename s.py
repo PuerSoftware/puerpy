@@ -1,3 +1,6 @@
+import re
+
+
 class String:
 	@staticmethod
 	def screaming_snake_to_camel(s: str) -> str:
@@ -19,3 +22,7 @@ class String:
 	@staticmethod
 	def to_kebab(s: str) -> str:
 		return s.lower().replace(' ', '-')
+
+	@staticmethod
+	def to_slug(s: str) -> str:
+		return re.sub(r'[^a-z0-9-]', '', String.to_kebab(s))
